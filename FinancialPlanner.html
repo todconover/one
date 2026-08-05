@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Financial Planner</title>
+
+    <style>
+        
+        th, td { text-align: right; border-right: none; padding-right: 4px;}
+        
+        input[type="number"] { text-align: right; }
+        
+        th { 
+            white-space: normal; /* Permits text wrapping */
+            border-bottom: 1px solid black; 
+            background-color: Gainsboro;
+        }
+
+        .styled-table {
+            border-collapse: collapse; /* Merges adjacent cell borders into a single clean line */
+            border: 1px solid black;
+        }
+        
+        /* Adds a vertical line to the right of every column cell */
+        .styled-table th, .styled-table td {
+          border-right: 1px solid black;
+        }
+        
+        /* Removes the vertical line from the outermost right edge */
+        .styled-table th:last-child, td:last-child {
+          border-right: none;
+        }
+        
+    </style>
+    
+    <script>
+
+        /*
+        function ApiSupport() {
+            // Prove the browser supports the API we need.  (No longer needed)
+            const supportsFileSystemAccess = 
+              'showOpenFilePicker' in window &&
+              'showSaveFilePicker' in window &&
+              'showDirectoryPicker' in window;
+            if (supportsFileSystemAccess) {
+              document.getElementById("messageArea").textContent = "✅ Full File System Access API is supported!";
+            } else {
+              document.getElementById("messageArea").textContent = "❌ Local disk pickers are NOT supported.";
+            }
+        }
+
+        function toThePenny(amount) {
+          return Number(Math.round(amount + 'e2') + 'e-2');
+        }
+
+        function rmdTest(accountBalance, age) {
+            // Does the rmdFactor function work?  
+            const rmdAmount = toThePenny(accountBalance / rmdFactor(age));
+            document.getElementById("messageArea").textContent = "Balance: " + accountBalance + "; Age: " + age + "; RMD: " + rmdAmount;
+            return;
+            }
+
+        function doNothing() {
+            document.getElementById("messageArea").textContent = "Do Nothing";
+        }
+
+        function tableOutputTest() {
+            outputRow("1", "10000", "123", "12");
+            outputRow("2", "10001", "142", "13");
+            outputRow("3", "10001", "142", "14");
+        }
+        
+
+        */
+        
+        function rmdFactor(age) {
+            // The ira balance is divided by the rmd factor to get the mandatory withdrawl
+            if (age < 73) return 0; // No RMD required prior to RMD age
+            // IRS Uniform Lifetime Table factors (for ages 73 to 115)
+            // Values are based on IRS Publication 590-B 
+            const rmdFactors = {
+                73: 26.5, 74: 25.5, 75: 24.6, 76: 23.7, 77: 22.9,
+                78: 22.0, 79: 21.1, 80: 20.2, 81: 19.4, 82: 18.5,
+                83: 17.7, 84: 16.8, 85: 16.0, 86: 15.2, 87: 14.4,
+                88: 13.7, 89: 12.9, 90: 12.2, 91: 11.5, 92: 10.8,
+                93: 10.1, 94: 9.5, 95: 8.9, 96: 8.4, 97: 7.8,
+                98: 7.3, 99: 6.8, 100: 6.4, 101: 6.0, 102: 5.6,
+                103: 5.2, 104: 4.9, 105: 4.5, 106: 4.2, 107: 3.9,
+                108: 3.7, 109: 3.4, 110: 3.1, 111: 2.9, 112: 2.7,
+                113: 2.5, 114: 2.3, 115: 2.1
+            };
+            // Use factor 2.1 for any age 116 or older
+            return rmdFactors[age] || 2.1;
+        }
+
+        function calculateTax(taxableIncome) {
+            if (taxableIncome <= 0) return 0;
+            // 2026 Tax Brackets and Rates for Single Filers
+            const brackets = [
+                { limit: 12400, rate: 0.10, base: 0 },
+                { limit: 50400, rate: 0.12, base: 1240 },     // 10% on the first $12,400 = $1,240
+                { limit: 105700, rate: 0.22, base: 5800 },    // 12% on income between $12,400 & $50,400
+                { limit: 201775, rate: 0.24, base: 17966 },
+                { limit: 256225, rate: 0.32, base: 41028 },
+                { limit: 640600, rate: 0.35, base: 18452 },
+                { limit: Infinity, rate: 0.37, base: 253051 }
+            ];
+            let tax = 0;
+            let previousLimit = 0;
+            for (const bracket of brackets) {
+                if (taxableIncome > previousLimit) {
+                    let amountInBracket = Math.min(taxableIncome, bracket.limit) - previousLimit;
+                    tax += amountInBracket * bracket.rate;
+                    previousLimit = bracket.limit;
+                } else {
+                    break;
+                }
+            }
+            //document.getElementById("messageArea").textContent = tax;
+            return Math.round(tax);
+        }
+
+        function calcCapGainsTax(capitalGain, ordinaryIncome = 0) {
+            const taxableIncome = ordinaryIncome + capitalGain;             
+            // 2026 thresholds for single filers
+            const threshold15Percent = 49450;
+            const threshold20Percent = 545500;              
+            let totalTax = 0;
+            let remainingGain = capitalGain;
+            let currentIncome = ordinaryIncome;            
+            // 0% bracket portion
+            if (currentIncome < threshold15Percent && remainingGain > 0)  {
+                const roomInBracket = threshold15Percent - currentIncome;
+                const taxedAtZero = Math.min(remainingGain, roomInBracket);
+                remainingGain -= taxedAtZero;
+                currentIncome += taxedAtZero;
+            }           
+            // 15% bracket portion
+            if (currentIncome < threshold20Percent && remainingGain > 0) {
+                const roomInBracket = threshold20Percent - currentIncome;
+                const taxedAt15 = Math.min(remainingGain, roomInBracket);
+                totalTax += taxedAt15 * 0.15;
+                remainingGain -= taxedAt15;
+                currentIncome += taxedAt15;
+            }            
+            // 20% bracket portion
+            if (remainingGain > 0) {
+                totalTax += remainingGain * 0.20;
+            }
+            return totalTax;
+        }
+
+        function medicarePremium(magiIncome) {
+             const partBBase = 202.90;
+             let partBIRMAA = 0.00;
+             let partDIRMAA = 0.00;
+             if (magiIncome <= 109000) {
+                    partBIRMAA = 0.00;
+                    partDIRMAA = 0.00;
+             } else if (magiIncome > 109000 && magiIncome <= 137000) {
+                    partBIRMAA = 81.20;
+                    partDIRMAA = 14.50;
+             } else if (magiIncome > 137000 && magiIncome <= 171000) {
+                    partBIRMAA = 202.90;
+                    partDIRMAA = 37.50;
+             } else if (magiIncome > 171000 && magiIncome <= 205000) {
+                    partBIRMAA = 324.60;
+                    partDIRMAA = 60.40;
+             } else if (magiIncome > 205000 && magiIncome < 500000) {
+                    partBIRMAA = 446.30;
+                    partDIRMAA = 83.30;
+             } else { // magiIncome >= 500000
+                    partBIRMAA = 487.00;
+                    partDIRMAA = 91.00;
+             }
+             const totalMonthlyPremium = (partBBase + partBIRMAA + partDIRMAA) * 12;
+             return Math.round(totalMonthlyPremium * 100) / 100;
+        }
+        
+        function outputFile(x, filename) {
+            // This will be used to output the string of numbers to a file.
+            // 1. Get the text from the HTML textarea element
+            //const textToWrite = document.getElementById("textInput").value;
+            // 2. Create a Blob object containing the text as plain text data
+            const textBlob = new Blob([x], { type: "text/plain" });
+            // 3. Define a filename for the download
+            fileName = filename + ".txt";
+            // 4. Create a temporary, hidden anchor (<a>) element
+            const downloadLink = document.createElement("a");
+            downloadLink.download = fileName;
+            // 5. Generate a temporary URL pointing to the Blob and hide it
+            downloadLink.href = window.URL.createObjectURL(textBlob);
+            downloadLink.style.display = "none";
+            // 7. Append the anchor to the HTML document body
+            document.body.appendChild(downloadLink);
+            // 8. Trigger the browser's download prompt
+            downloadLink.click();
+            // 9. Clean up by removing the element and revoking the temporary URL
+            document.body.removeChild(downloadLink);
+            window.URL.revokeObjectURL(downloadLink.href);
+            // Say we are done
+            return fileName;
+        }
+
+        async function getData() {
+            // This reads the contents of a file to an a
+            // [fileHandle] is an array; hence the square brackets,  
+            try {
+                document.getElementById("messageArea").textContent = "One";
+                const [fileHandle] = await window.showOpenFilePicker();
+                document.getElementById("messageArea").textContent = "Two";
+                const file = await fileHandle.getFile();
+                document.getElementById("messageArea").textContent = "Three";
+                const csvString = await file.text();
+                document.getElementById("messageArea").textContent = "Four " + csvString;
+                const csv = csvString.split(",").map(item => item.trim());
+                let i = 0;
+                modelName.value = csv[i++];
+                requirementAmount.value = csv[i++];
+                inflationAmount.value = csv[i++];
+                ageAmount.value = csv[i++];
+                yearAmount.value = csv[i++];
+                endSimAmount.value = csv[i++];
+                ssAmount.value = csv[i++];
+                beginSsAgeAmount.value = csv[i++];
+                beginSsMonthAmount.value = csv[i++];
+                medicareOneAmount.value = csv[i++];
+                medicareTwoAmount.value = csv[i++];
+                savingAmount.value = csv[i++];
+                savingRoi.value = csv[i++];
+                cdAmount.value = csv[i++];
+                cdRoi.value = csv[i++];
+                mutualAmount.value = csv[i++];
+                mutualRoi.value = csv[i++];
+                stockAmount.value = csv[i++];
+                stockRoi.value = csv[i++];
+                iraAmount.value = csv[i++];
+                iraRoi.value = csv[i++];
+                rothAmount.value = csv[i++];
+                rothRoi.value = csv[i++];
+                conversionAmount.value = csv[i++];
+                conversionYearsAmount.value = csv[i++];
+            } catch (error) {
+                document.getElementById("messageArea").textContent = error.message;
+            }
+        } 
+
+        function saveData() {
+            // Build a comma delimeted string from all the input values
+            let outputString = "";
+            outputString += modelName.value + ", ";
+            outputString += requirementAmount.value + ", ";
+            outputString += inflationAmount.value + ", ";
+            outputString += ageAmount.value + ", ";
+            outputString += yearAmount.value + ", ";
+            outputString += endSimAmount.value + ", ";
+            outputString += ssAmount.value + ", ";
+            outputString += beginSsAgeAmount.value + ", ";
+            outputString += beginSsMonthAmount.value + ", ";
+            outputString += medicareOneAmount.value + ", ";
+            outputString += medicareTwoAmount.value + ", ";
+            outputString += savingAmount.value + ", ";
+            outputString += savingRoi.value + ", ";
+            outputString += cdAmount.value + ", ";
+            outputString += cdRoi.value + ", ";
+            outputString += mutualAmount.value + ", ";
+            outputString += mutualRoi.value + ", ";
+            outputString += stockAmount.value + ", ";
+            outputString += stockRoi.value + ", ";
+            outputString += iraAmount.value + ", ";
+            outputString += iraRoi.value + ", ";
+            outputString += rothAmount.value + ", ";
+            outputString += rothRoi.value + ", ";
+            outputString += conversionAmount.value + ", ";
+            outputString += conversionYearsAmount.value + ", ";
+            document.getElementById("messageArea").textContent =  outputString + " -> " + outputFile(outputString, modelName.value);
+        }
+        
+        function outputRow(year, assets, mutual, stock, other, taxable, tax, capGain, capTax, ira, iraDist, roth, expense, cash, shortfall, medicare, rothOut, note) {
+            const tbodyRef = document.getElementById("resultTable").querySelector('tbody');
+            let newRow = tbodyRef.insertRow();
+            let cell0 = newRow.insertCell(0);
+            let cell1 = newRow.insertCell(1);
+            let cell2 = newRow.insertCell(2);
+            let cell3 = newRow.insertCell(3);
+            let cell4 = newRow.insertCell(4);
+            let cell5 = newRow.insertCell(5);
+            let cell6 = newRow.insertCell(6);
+            let cell7 = newRow.insertCell(7);
+            let cell8 = newRow.insertCell(8);
+            let cell9 = newRow.insertCell(9);
+            let cell10 = newRow.insertCell(10);
+            let cell11 = newRow.insertCell(11);
+            let cell12 = newRow.insertCell(12);
+            let cell13 = newRow.insertCell(13);
+            let cell14 = newRow.insertCell(14);
+            let cell15 = newRow.insertCell(15);
+            let cell16 = newRow.insertCell(16);
+            let cell17 = newRow.insertCell(17);
+            cell0.textContent = year;
+            cell1.textContent = Math.round(assets).toLocaleString();
+            cell2.textContent = Math.round(mutual).toLocaleString();
+            cell3.textContent = Math.round(stock).toLocaleString();
+            cell4.textContent = Math.round(other).toLocaleString();
+            cell5.textContent = Math.round(ira).toLocaleString();
+            cell6.textContent = Math.round(roth).toLocaleString();
+            cell7.textContent = Math.round(iraDist).toLocaleString();
+            cell8.textContent = Math.round(rothOut).toLocaleString();            
+            cell9.textContent = Math.round(taxable).toLocaleString();
+            cell10.textContent = Math.round(capGain).toLocaleString();
+            cell11.textContent = Math.round(tax).toLocaleString();
+            cell12.textContent = Math.round(capTax).toLocaleString();
+            cell13.textContent = Math.round(medicare).toLocaleString();            
+            cell14.textContent = Math.round(expense).toLocaleString();
+            cell15.textContent = Math.round(cash).toLocaleString();
+            cell16.textContent = shortfall;
+            cell17.textContent = note;
+        }
+
+        function initializeResultTable(tableId) {
+            const table = document.getElementById(tableId);
+            if (table) {
+                const tbody = table.querySelector('tbody');
+                if (tbody) {
+                    tbody.innerHTML = '';
+                }
+            }
+        }
+        
+        function highestOfFour(a, b, c, d) {
+          return Math.max(a, b, c, d);
+        }
+        function lowestOfFour(a, b, c, d) {
+          return Math.min(a, b, c, d);
+        }
+        function formatter(nm) {
+            if (nm < 0) {
+                return "(" + Math.round(nm * -1).toLocaleString() + ")";
+            } else {
+                return Math.round(nm).toLocaleString();
+            }
+        }
+        function simulation() {
+        try {
+            let conversionCount = 0;
+            let note = "";
+            let yearlyConversionAmount = Number(conversionAmount.value); 
+            let conversionYears = Number(conversionYearsAmount.value);
+            let age = Number(ageAmount.value);
+            let endSim = Number(endSimAmount.value);
+            let medicareOne = Number(medicareOneAmount.value);
+            let medicareTwo = Number(medicareTwoAmount.value);
+            let year = Number(yearAmount.value);
+            let requirement = Number(requirementAmount.value);
+            let ss = Number(ssAmount.value);
+            let savings = Number(savingAmount.value);
+            let cd = Number(cdAmount.value);
+            let mutual = Number(mutualAmount.value);
+            let stock = Number(stockAmount.value);
+            let ira = Number(iraAmount.value);
+            let roth = Number(rothAmount.value);
+            let totalIncomeTax = 0;
+            let totalMedicare = 0;
+            let totalGainsTax = 0;
+            let doRoth = 0;
+            let ssIncome = 0;
+            let expense = 0;
+            let cash = 0;
+            let shortfall = 0;
+            let incomeTax = 0;
+            let capitalGainsTax = 0;
+            let thisCapGainTarget = 0;
+            let savingIncome = 0;
+            let cdIncome = 0;
+            let mutualIncome = 0;
+            let stockIncome = 0;
+            let iraIncome = 0;
+            let rothIncome = 0;
+            let assets = 0;
+            let taxableIncome = 0;
+            let capitalRemaining = 0;
+            let capGain = 0;
+            let message = "";
+            let iraDistribution = 0;
+            let rothContribution = 0;
+            let medicare = 0;
+            let mutualPart = 0;
+            let stockPart = 0;
+            let rothPart = 0;
+            let cdPart = 0;
+            
+            if (age < 9 || age > 99) {
+                document.getElementById("messageArea").textContent = "Age out of range";
+                return "Age out of range";
+            }
+
+            // IRA Conversion Setup
+            // If neither condition below is true, then leave as is
+            if (yearlyConversionAmount > 0 && conversionYears == 0) {
+                // We have an amount, but no years; make the years infinate
+                conversionYears = 99;
+            } else { 
+                if (yearlyConversionAmount == 0 && conversionYears > 0) {
+                // We have years, but no amount; estimate the amount we need
+                yearlyConversionAmount = (Math.round(ira * (Number(iraRoi.value) / 100))) / conversionYears;
+                }
+            }
+            
+            initializeResultTable("resultTable");
+
+            while (age <= endSim) {
+                
+                // Initialize some things
+                cash = 0;
+                expense = 0;
+                ssIncome = 0;
+                taxableIncome = 0;
+                iraDistribution = 0;
+                rothContribution = 0;
+                doRoth = 0;
+                
+                // Update accounts per earnings
+                savingIncome = Math.round(savings * (Number(savingRoi.value) / 100));
+                cdIncome = Math.round(cd * (Number(cdRoi.value) / 100));
+                mutualIncome = Math.round(mutual * (Number(mutualRoi.value) / 100));
+                stockIncome = Math.round(stock * (Number(stockRoi.value) / 100));
+                iraIncome = Math.round(ira * (Number(iraRoi.value) / 100));
+                rothIncome = Math.round(roth * (Number(rothRoi.value) / 100));
+
+                savings = savings + savingIncome;
+                cd = cd + cdIncome;
+                mutual = mutual + mutualIncome;
+                stock = stock + stockIncome;
+                ira = ira + iraIncome;
+                roth = roth + rothIncome;
+                medicare = medicarePremium(medicareTwo); // Depends on income from two years ago.
+
+                // Take IRA distribution.
+                // See if there is a mandatory deduction and use it if it's greater than the yearly amount,
+                // else use the yearly amount, unless there is not enough left, in which case take it all.   
+                if (rmdFactor(age) > 0) {
+                    iraDistribution = Math.round(ira / rmdFactor(age));
+                }               
+                if (conversionYears > conversionCount) {
+                    if (yearlyConversionAmount > 0) {
+                        doRoth = 1;
+                        if (iraDistribution < yearlyConversionAmount) {
+                            if (ira > yearlyConversionAmount) {
+                                iraDistribution = yearlyConversionAmount;
+                            } else {
+                                iraDistribution = ira;   
+                            }
+                        }
+                        ira = ira - iraDistribution;
+                    }
+                    conversionCount = conversionCount + 1;
+                } else {
+                    ira = ira - iraDistribution;
+                    if (iraDistribution > 0) {
+                    }
+                }
+                if (doRoth == 0) { 
+                    cash = cash + iraDistribution;   
+                } else {
+                    roth = roth + iraDistribution;
+                }
+                
+                // Do we get any Social Security
+                if (age == Number(beginSsAgeAmount.value)) {
+                    ssIncome = ss * (12 - Number(beginSsMonthAmount.value));
+                } else {
+                    if (age > Number(beginSsAgeAmount.value) ) {
+                        ssIncome = (ss * 12);
+                    }
+                }   
+                if (year > 2031) {
+                    // Social Security is reduced begining in 2032
+                    ssIncome = ssIncome * 0.78;
+                }
+                cash = cash + ssIncome;
+
+                // Income Tax
+                // SS is 85%.  Mutual fund income is 75% interest and dividens, and 25% selling. 
+                // If we take money from the mutual funds, the sale will be all capital gains.  
+                taxableIncome = (ssIncome * 0.85) + iraDistribution + savingIncome + cdIncome + (mutualIncome * 0.5);
+                capGain = mutualIncome * 0.5;  
+                incomeTax = calculateTax(taxableIncome);
+       
+                // Get money to pay taxes and medicare premium
+                shortfall = (requirement + incomeTax + medicare) - cash;  
+                if (shortfall > 0) {
+                    shortfall = shortfall * 1.15; // bump by the additional cap gains tax we expect.  
+                    if (shortfall > (stock + mutual + cd)) {
+                        // Take all from stock, mutual, and cd, and the rest from Roth;
+                        shortfall = shortfall - (shortfall * 0.06);
+                        stockPart = stock;
+                        mutualPart = mutual;
+                        cdPart = cd;
+                        rothPart = shortfall - (stockPart + mutualPart + cdPart);
+                        roth = roth - rothPart;
+                        /*
+                        note = note + "<br> (" + age + ") Shortfall: " + Math.round(shortfall);
+                        note = note + ", Stock Part: " + Math.round(stockPart);
+                        note = note + ", Mutual Part: " + Math.round(mutualPart);
+                        note = note + ", CD Part: " + Math.round(cdPart);
+                        note = note + ", Roth Part: " + Math.round(rothPart);
+                        note = note + ", cash: " + Math.round(cash);
+                        note = note + "<br>(" + age + ") Roth Deduction: " + Math.round(rothPart);
+                        */
+                    } else {
+                        // Take funds from stocks, mutual fund, and cd in amounts equivilant to their relative sizes.
+                        mutualPart = shortfall * (mutual / (stock + mutual + cd));
+                        stockPart = shortfall * (stock / (stock + mutual + cd));
+                        cdPart = shortfall * (cd / (stock + mutual + cd));
+                        /*
+                        note = note + "<br> (" + age + ") Shortfall: " + Math.round(shortfall);
+                        note = note + ", Stock Part: " + Math.round(stockPart);
+                        note = note + ", Mutual Part: " + Math.round(mutualPart);
+                        note = note + ", CD Part: " + Math.round(cdPart);
+                        note = note + ", cash: " + Math.round(cash);
+                        */
+                        rothPart = 0;
+                    }
+                    stock = stock - stockPart;
+                    mutual = mutual - mutualPart;
+                    cd = cd - cdPart;
+                    cash = cash + stockPart + mutualPart + cdPart + rothPart;
+                    capGain = capGain + stockPart + mutualPart; // Take cap gains from stocks and mutual, but not the cd.
+                }
+
+                // Taxes
+                capitalGainsTax = calcCapGainsTax(capGain, taxableIncome);
+                expense = Math.round(incomeTax + capitalGainsTax + requirement + medicare);
+                shortfall = expense - cash;
+                if (shortfall < 0) {
+                    cd = cd + (shortfall * -1);
+                } 
+                
+                assets = Math.round(savings + cd + mutual + stock + ira + roth);
+
+                // Output a row
+                outputRow(age, assets, mutual, stock, cd, taxableIncome, incomeTax, capGain, capitalGainsTax, ira, iraDistribution, roth, expense, cash, formatter(shortfall), medicare, rothPart, "");
+
+                // Grand Totals
+                totalIncomeTax = totalIncomeTax + incomeTax;
+                totalGainsTax = totalGainsTax + capitalGainsTax;
+                totalMedicare = totalMedicare + medicare;
+                                    
+                // Update values for the next year
+                medicareTwo = medicareOne;
+                medicareOne = (taxableIncome + capGain);
+                requirement = Math.round(requirement + (requirement * (Number(inflationAmount.value) / 100)));
+                ss = Math.round( ss + (ss * ((Number(inflationAmount.value) / 100) * 0.99)));
+                age++;
+                year++;
+            }
+            
+            outputRow(0, 0, 0, 0, 0, 0, totalIncomeTax, 0, totalGainsTax, 0, 0, 0, 0, 0, 0, totalMedicare, 0, "Totals");
+            
+            document.getElementById("messageArea").innerHTML = 
+                note + "<br>Total Assets: " + Math.round(assets).toLocaleString() + "; Total Tax: " + Math.round(totalIncomeTax + totalGainsTax).toLocaleString() + "; Total Medicare: " + Math.round(totalMedicare).toLocaleString();
+            
+        } catch (error) {
+            document.getElementById("messageArea").textContent = error.message;
+        }
+    }
+
+    function showHelp() {
+        try {
+            const myDiv = document.getElementById('helpText');
+            if (myDiv.style.display === "none") {
+                myDiv.style.display = "block";
+            } else {
+                myDiv.style.display = "none";
+            }
+        } catch (error) {
+            document.getElementById("messageArea").textContent = error.message;
+        }
+    }
+        
+    </script>    
+    
+</head>
+<body>
+<h2>Financial Planner</h2>
+
+    <div id="helpText" style="display: none;">
+            For each year...
+            <ol>
+                <li>Calculate gains to accounts per ROI values entered, 
+                and add to running totals for ordinary income, or capital gains.</li>
+                <li>Withdraw money from IRA for RMD, or Roth conversion, as needed.
+                Add that value to taxable income.  Add to Roth if we are doing conversions.</li>
+                <li>If we get Social Security, add 85% of it to the running taxable income total.
+                Starting in 2032 SS is reduced to 87% of what we should get.  </li>
+                <li>Medicare is calculated from taxable income from two years prior, 
+                    or the data entered on the form for the first two yeaers.</li>
+                <li>Calculate income tax, where taxable income is 85% of Social Security + IRA distribution 
+                    + income from savings and CD + 75% of mutual funds income.  
+                    Note that 25% of mutual funds income is considered capital gains. 
+                    The 75/25 arrangement is an estimate.</li>
+                <li>Income taxes are paid for from mutual funds, stocks, and CD,
+                    in amounts equivilant to their relative sizes.  
+                    The amount withdrawn is increased by 15%, an estimate, to pay for 
+                    the additional capital gains tax we incure due to this withdrawl.
+                    If there is not enough money in mutual funds, stocks, and CD,
+                    then we take money from Roth.  </li>    
+                <li>Calculate the actual capital gains tax per the withdrawls made above. </li>
+                <li>If there is more than enough cash to pay taxes, the overage is added to the CD.
+                    The over/under is displayed in the shortfall column. 
+                    A positive number is a shortfall.  A large shortfall indicates something is wrong.</li>
+                <li>The yearly spending target is increased by the inflation amount,
+                    and Social Security is increased by 99% of the inflation amount.</li>
+            </ol>
+            The Form
+            <ul>
+                <li><b>Model Name - </b> Any name you want.  This will become the file name if you save the data from the form.</li>
+                <li><b>Yearly Spending Target - </b>  The amount of money you expect to spend each year, 
+                    other than taxes or medicare premiums, as they are accounted for by the model elsewhere.
+                    It becomes part of the "Expense" column in the report.  
+                    It is increased by the inflation amount each year.</li>
+                <li><b>Inflation Rate - </b>Expected rate of inflation.  
+                    It affects Yearly Spending Target and Social Security amount.</li>
+                <li><b>Current Age - </b> Age now.  The first year of the model.  
+                    It affects the Required Mandatory Distribution from your IRA.</li>
+                <li><b>Year - </b>The current year.  
+                    It affects Social Security, as that is expected to be reduced in 2032.</li>
+                <li><b>End Simulation at Age - </b> The simulation will end at this age.</li>
+                <li><b>SS Amount - </b>Monthly Social Security amount.
+                    The value is increased each year by the Inflation Rate.</li>
+                <li><b>Begin SS at Age / Month - </b>The year and month you expect to start Social Security.</li>
+                <li><b>Income Last Year / Year Before - </b>Adjusted gross income from the last two years.
+                    These numbers are used to calculate Medicare premiums the first two years of the model.
+                    After that the numbers generated by the model are used.</li>
+                <li><b>Savings / ROI - </b>Amount of current savings and the interest rate.  Not currently used by the model.</li>
+                <li><b>CD / ROI - </b>Amount of any CDs and interest rate.  
+                    These funds are used, together with Mutual Funds and Stocks, to pay taxes.
+                    In any given year, if the model algorithm takes too much out of various accounts
+                    to cover expenses, then the money is returned to this account.
+                    Proceeds from this account are taxed as ordinary income.</li>
+                <li><b>Mutual Fund / ROI - </b>Amount of any mutual funds and expected rate of return.
+                    These funds are used, together with CD and stocks, to pay taxes.
+                    Note that returns from mutual funds can be either ordinary income, from interest and dividends,
+                    or capital gains, from the sale of stock.  
+                    The model makes a 50/50 percent assumption and pays 50% of gains as ordinary income,
+                    and the remaining 50% as capital gains.
+                    But, when funds are extracted to pay taxes, they are taxed as capital gains.</li>
+                <li><b>Stocks / ROI - </b> Amount of any stocks and expected rate of return.  
+                    These funds, together with CD and Mutual Funds are used to pay taxes.
+                    Proceeds from this account are taxed as capital gains.</li>
+                <li><b>IRA / ROI - </b>Amount of any IRAs and expected rate of return.
+                    These funds can be converted to Roth over time, depending on inputs to the model (see below).
+                    They are also withdrawn based on the rules for RMDs begining at age 73.
+                    Proceeds from this account are taxed as ordinary income.</li>
+                <li><b>Roth / ROI - </b>Amount of any Roth and expected rate of return.
+                    Funds in the IRA can optionally be moved to this account, over time,
+                    depending on inputs to the model (see below).
+                    Proceeds from this account are not taxed.
+                    Money from this account is automatically withdrawn to pay taxes
+                    if the model runs out of money in the CD, Mutual Funds, and Stocks accounts.
+                    The model does not enforce the 5 year wait rule.  </li>
+                <li><b>Roth Conversion Amount / Years - </b>The amount you want to convert from IRA to Roth
+                    and the number of years to repeat this event.
+                    Optionally if there is an amount, but the years is left blank, then the model will 
+                    repeat the conversion, using the amount, for as long as there is still money in the IRA.
+                    Or, if there is no amount, but the number of years is entered,
+                    then the model will calculate how much money it should convert each year to 
+                    complete the conversion in the requisit number of years. </li>
+            </ul>
+            Buttons
+            <ul>
+                <li><b>Show/Hide Help - </b> Alternately displays this help or hides it.</li>
+                <li><b>Retirieve Data From File - </b> Displays a search box so you can find and select a 
+                    previously saved file to populate the form.</li>
+                <li><b>Simulation - </b> Run a simulation based on data entered to the form.</li>
+                <li><b>Save Data - </b> Saves data from the form to a file using the Model Name as the name of the file.
+                    Only data entered to the form is saved.  The simulation/report is not saved.</li>
+            </ul>
+            Report Columns
+            <ul>
+                <li><b>Age</b> - Subjects age for current year.</li>
+                <li><b>Total Assets</b> - Sum of funds in all accounts at end of year after interest earned and expenses paid.</li>
+                <li><b>Mutual Funds</b> - Balance at end of year for mutual fund account.</li>
+                <li><b>Stocks</b> - Balance at end of year for stocks.</li>
+                <li><b>CD</b> - Balance at end of year for CD account.</li>
+                <li><b>IRA</b> - Balance at end of year for the IRA.</li>
+                <li><b>Roth</b> - Balance at end of year for Roth account.</li>
+                <li><b>IRA Dist</b> - Total distributions for RMA and Roth conversions.</li>
+                <li><b>Roth Dist</b> - Total distributions from Roth account.  
+                    Only used when there are not enough funds in mutual funds, stocks, and CD to pay taxes.</li>
+                <li><b>Taxable Income</b> - 
+                    85% of Social Security, plus IRA distribution, plus savings interest, 
+                    plus CD interest, plus 75% income from mutual funds. </li>
+                <li><b>Cap Gains</b> - Gains from the sale of stocks plus 25% of income from mutual funds. </li>
+                <li><b>Income Tax</b> - Tax on ordinary income.</li>
+                <li><b>Cap Gains Tax</b> - Tax on capital gains.</li>
+                <li><b>Medicare</b> - Medicare premiums based on income.</li>
+                <li><b>Expenses</b> - Sum of spending target, income tax, capital gains tax, and medicare premiumns.
+                    The spending target is increased each year by the inflation rate.</li>
+                <li><b>Cash</b> - Sum of Social Security and withdrawls from all accounts, 
+                    except IRA distributions that are converted to Roth.</li>
+                <li><b>Shortfall</b> - The difference between cash and expenses after all withdrawls, 
+                    and taxes and medicare premiums are paid. A positive number indicates a shortage; 
+                    a negative number indicates an overage.</li>
+                <li><b>Note</b> - Notes for debugging.</li>
+            </ul>
+        Last Update: 8/5/2026
+    </div>
+    
+        <table>
+            <tr><td></td><td style="text-align: left;"> 
+                <button onclick="showHelp()"> Show/Hide Help </button>
+                <button onclick="getData()"> Retrieve Data from File </button> 
+                <button type="button" onclick="simulation()"> Simulation </button> 
+            </td></tr>
+            <tr><td>Model Name:</td><td style="text-align: left;"><input type="text" id="modelName" name="modelName"></td></tr>
+            <tr><td>Yearly Spending Target:</td>
+                <td style="text-align: left;"><input type="number" size="9" id="requirementAmount" name="requirementAmount"></td></tr>
+            <tr><td>Inflation Rate:</td>
+                <td style="text-align: left;"><input type="number" size="9" id="inflationAmount" name="inflationAmount"></td></tr>
+            <tr><td>Current Age / Year:</td>
+                <td><input type="number" id="ageAmount" name="ageAmount">
+                    <input type="number" id="yearAmount" name="yearAmount"></td></tr>
+            <tr><td>End Simulation at Age:</td>
+                <td style="text-align: left;"><input type="number" id="endSimAmount" name="endSimAmount"></td></tr>
+            <tr><td>SS Amount:</td><td style="text-align: left;"><input type="number" id="ssAmount" name="ssAmount"></td></tr>
+            <tr><td>Begin SS at Age / Month:</td>
+                <td><input type="number" size="9" id="beginSsAgeAmount" name="beginSsAgeAmount">
+                    <input type="number" size="9" id="beginSsMonthAmount" name="beginSsMonthAmount"></td></tr>
+            <tr><td>Income Last Year / Year Before:</td>
+                <td><input type="number" size="9" id="medicareOneAmount" name="medicareOneAmount">
+                    <input type="number" size="9" id="medicareTwoAmount" name="medicareTwoAmount"></td></tr>
+            <tr><td>Savings / ROI:</td>
+                <td><input type="number" size="9" id="savingAmount" name="savingAmount" >
+                    <input type="number" size="9" id="savingRoi" name="savingRoi" ></td></tr>
+            <tr><td>CD / ROI:</td>
+                <td><input type="number" size="9" id="cdAmount" name="cdAmount" >
+                    <input type="number" size="9" id="cdRoi" name="cdRoi" ></td></tr>
+            <tr><td>Mutual Fund / ROI:</td>
+                <td><input type="number" size="9" id="mutualAmount" name="mutualAmount" >
+                    <input type="number" size="9" id="mutualRoi" name="mutualRoi" ></td></tr>
+            <tr><td>Stocks / ROI:</td>
+                <td><input type="number" size="9" id="stockAmount" name="stockAmount" >
+                    <input type="number" size="9" id="stockRoi" name="stockRoi" ></td></tr>
+            <tr><td>IRA / ROI:</td>
+                <td><input type="number" size="9" id="iraAmount" name="iraAmount" >
+                    <input type="number" size="9" id="iraRoi" name="iraRoi" ></td></tr>
+            <tr><td>Roth / ROI:</td>
+                <td><input type="number" size="9" id="rothAmount" name="rothAmount" >
+                    <input type="number" size="9" id="rothRoi" name="rothRoi" ></td></tr>
+            <tr><td>Roth Conversion Amount / Years:</td>
+                <td><input type="number" size="9" id="conversionAmount" name="conversionAmount" >
+                    <input type="number" size="9" id="conversionYearsAmount" name="conversionYearsAmount" ></td></tr>
+            <tr><td> </td> 
+                <td style="text-align: left;"> 
+                    <button type="button" onclick="saveData()"> Save Data </button> 
+                </td></tr>
+        </table>
+        
+        <!-- The paragraph where messages appear -->
+        <p id="messageArea"></p>
+
+        <div class="table-container">
+        <table class="styled-table" id="resultTable">
+            <thead>
+                <tr>
+                    <th>Year</th> <th>Total Assets</th> <th>Mutual Fund</th> <th>Stocks</th>  <th>CD</th> 
+                    <th>IRA</th> <th>Roth</th> <th>IRA Dist</th>  <th>Roth Dist</th>
+                    <th>Taxable Income</th>  <th>Cap Gains</th> <th>Income Tax</th> <th>Cap Tax</th> 
+                    <th>Medicare</th> <th>Expenses</th> <th>Cash</th> <th>Shortfall</th> 
+                    <th>Note</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+        </div>
+    
+        <!--
+        <button onclick="ApiSupport()"> API Support </button>
+        <button onclick="tableOutputTest()"> Table Output Test </button>
+        <label for="taxableAmount">Taxable Income (test):</label>
+        <input type="number" id="taxableAmount" name="taxableAmount" >
+        <button type="button" onclick="calculateTax(document.getElementById('taxableAmount').value)"> Calculate Tax </button>
+        <br>
+
+        <button type="button" onclick="rmdTest(450000, 73)"> RMD Test </button>
+        <br>
+    -->
+
+</body>
+</html>
