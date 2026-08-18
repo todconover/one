@@ -73,7 +73,21 @@
         
 
         */
+
         
+        function showHelp() {
+            try {
+                const myDiv = document.getElementById('helpText');
+                if (myDiv.style.display === "none") {
+                    myDiv.style.display = "block";
+                } else {
+                    myDiv.style.display = "none";
+                }
+            } catch (error) {
+                document.getElementById("messageArea").textContent = error.message;
+            }
+        }
+       
         function rmdFactor(age) {
             // The ira balance is divided by the rmd factor to get the mandatory withdrawl
             if (age < 73) return 0; // No RMD required prior to RMD age
@@ -241,6 +255,7 @@
                 rothRoi.value = csv[i++];
                 conversionAmount.value = csv[i++];
                 conversionYearsAmount.value = csv[i++];
+                if (csv[i++] == "true") {iraTaxPay.checked = true};
             } catch (error) {
                 document.getElementById("messageArea").textContent = error.message;
             }
@@ -274,10 +289,13 @@
             outputString += rothRoi.value + ", ";
             outputString += conversionAmount.value + ", ";
             outputString += conversionYearsAmount.value + ", ";
+            let ipt = "false";
+            if (iraTaxPay.checked) { ipt = "true" };
+            outputString += ipt + ", ";
             document.getElementById("messageArea").textContent =  outputString + " -> " + outputFile(outputString, modelName.value);
         }
         
-        function outputRow(year, assets, mutual, stock, other, taxable, tax, capGain, capTax, ira, iraDist, roth, expense, cash, shortfall, medicare, rothOut, note) {
+        function outputRow(year, assets, mutual, stock, cert, taxable, tax, capGain, capTax, ira, iraDist, roth, expense, cash, shortfall, medicare, rothOut, note, other) {
             const tbodyRef = document.getElementById("resultTable").querySelector('tbody');
             let newRow = tbodyRef.insertRow();
             let cell0 = newRow.insertCell(0);
@@ -298,11 +316,12 @@
             let cell15 = newRow.insertCell(15);
             let cell16 = newRow.insertCell(16);
             let cell17 = newRow.insertCell(17);
+            let cell18 = newRow.insertCell(18);
             cell0.textContent = year;
             cell1.textContent = Math.round(assets).toLocaleString();
             cell2.textContent = Math.round(mutual).toLocaleString();
             cell3.textContent = Math.round(stock).toLocaleString();
-            cell4.textContent = Math.round(other).toLocaleString();
+            cell4.textContent = Math.round(cert).toLocaleString();
             cell5.textContent = Math.round(ira).toLocaleString();
             cell6.textContent = Math.round(roth).toLocaleString();
             cell7.textContent = Math.round(iraDist).toLocaleString();
@@ -316,6 +335,7 @@
             cell15.textContent = Math.round(cash).toLocaleString();
             cell16.textContent = shortfall;
             cell17.textContent = note;
+            cell18.textContent = Math.round(other).toLocaleString();
         }
 
         function initializeResultTable(tableId) {
@@ -341,6 +361,17 @@
                 return Math.round(nm).toLocaleString();
             }
         }
+
+        function sayy(age, lable, value) {
+            try {
+                target = document.getElementById("sayHere");
+                subject = '\n(' + age + ') ' + lable + ': ' + value;
+                target.value += subject;
+            } catch (error) {
+                document.getElementById("messageArea").textContent = error.message;
+            }
+        }
+        
         function simulation() {
         try {
             let conversionCount = 0;
@@ -387,12 +418,12 @@
             let medicare = 0;
             let mutualPart = 0;
             let stockPart = 0;
-            let rothPart = 0;
             let cdPart = 0;
-            
+            let debug = "";
+            initializeResultTable("resultTable");
+
             if (age < 9 || age > 99) {
-                document.getElementById("messageArea").textContent = "Age out of range";
-                return "Age out of range";
+                throw new Error("Age out of range");
             }
 
             // IRA Conversion Setup
@@ -406,19 +437,16 @@
                 yearlyConversionAmount = (Math.round(ira * (Number(iraRoi.value) / 100))) / conversionYears;
                 }
             }
-            
-            initializeResultTable("resultTable");
-
             while (age <= endSim) {
                 
                 // Initialize some things
                 cash = 0;
                 expense = 0;
-                ssIncome = 0;
                 taxableIncome = 0;
                 iraDistribution = 0;
                 rothContribution = 0;
                 doRoth = 0;
+                note = "";
                 
                 // Update accounts per earnings
                 savingIncome = Math.round(savings * (Number(savingRoi.value) / 100));
@@ -434,113 +462,140 @@
                 stock = stock + stockIncome;
                 ira = ira + iraIncome;
                 roth = roth + rothIncome;
-                medicare = medicarePremium(medicareTwo); // Depends on income from two years ago.
+                medicare = medicarePremium(medicareTwo); // Depends on income from two years ago; see end of loop.  
 
                 // Take IRA distribution.
                 // See if there is a mandatory deduction and use it if it's greater than the yearly amount,
                 // else use the yearly amount, unless there is not enough left, in which case take it all.   
                 if (rmdFactor(age) > 0) {
-                    iraDistribution = Math.round(ira / rmdFactor(age));
+                    iraDistribution = Math.round(ira / rmdFactor(age));  // Mandatory distribution
                 }               
-                if (conversionYears > conversionCount) {
-                    if (yearlyConversionAmount > 0) {
+                if (conversionYears > conversionCount) {  // Doing roth conversions this year
+                    if (yearlyConversionAmount > 0) { // We have an amount in mind
                         doRoth = 1;
-                        if (iraDistribution < yearlyConversionAmount) {
-                            if (ira > yearlyConversionAmount) {
+                        if (iraDistribution < yearlyConversionAmount) { // Is the mandatory distribution less than we want
+                            if (ira > yearlyConversionAmount) { // Do we have enough left
                                 iraDistribution = yearlyConversionAmount;
                             } else {
                                 iraDistribution = ira;   
                             }
                         }
-                        ira = ira - iraDistribution;
                     }
                     conversionCount = conversionCount + 1;
-                } else {
-                    ira = ira - iraDistribution;
-                    if (iraDistribution > 0) {
-                    }
                 }
-                if (doRoth == 0) { 
-                    cash = cash + iraDistribution;   
-                } else {
-                    roth = roth + iraDistribution;
+                ira = ira - iraDistribution;
+                if (iraTaxPay.checked || doRoth == 0) {
+                    cash = cash + iraDistribution; // Add ira to cash if we pay tax from ira or we aren't doing roth.
                 }
                 
                 // Do we get any Social Security
                 if (age == Number(beginSsAgeAmount.value)) {
                     ssIncome = ss * (12 - Number(beginSsMonthAmount.value));
                 } else {
-                    if (age > Number(beginSsAgeAmount.value) ) {
+                    if (age == Number(beginSsAgeAmount.value) + 1 ) {
                         ssIncome = (ss * 12);
                     }
                 }   
-                if (year > 2031) {
-                    // Social Security is reduced begining in 2032
-                    ssIncome = ssIncome * 0.78;
+                if (year == 2032) {                    
+                    ssIncome = ssIncome * 0.78; // Social Security is reduced begining in 2032
                 }
                 cash = cash + ssIncome;
-
+                sayy(age, "Cash", cash);
+                
                 // Income Tax
-                // SS is 85%.  Mutual fund income is 75% interest and dividens, and 25% selling. 
-                // If we take money from the mutual funds, the sale will be all capital gains.  
+                // SS is taxed at 85%.  Mutual fund income is 50% interest and dividens, and 50% selling. 
+                // Later, if we take money from the mutual funds, the sale will be all capital gains.  
                 taxableIncome = (ssIncome * 0.85) + iraDistribution + savingIncome + cdIncome + (mutualIncome * 0.5);
                 capGain = mutualIncome * 0.5;  
                 incomeTax = calculateTax(taxableIncome);
-       
-                // Get money to pay taxes and medicare premium
-                shortfall = (requirement + incomeTax + medicare) - cash;  
-                if (shortfall > 0) {
-                    shortfall = shortfall * 1.15; // bump by the additional cap gains tax we expect.  
-                    if (shortfall > (stock + mutual + cd)) {
-                        // Take all from stock, mutual, and cd, and the rest from Roth;
-                        shortfall = shortfall - (shortfall * 0.06);
-                        stockPart = stock;
-                        mutualPart = mutual;
-                        cdPart = cd;
-                        rothPart = shortfall - (stockPart + mutualPart + cdPart);
-                        roth = roth - rothPart;
-                        /*
-                        note = note + "<br> (" + age + ") Shortfall: " + Math.round(shortfall);
-                        note = note + ", Stock Part: " + Math.round(stockPart);
-                        note = note + ", Mutual Part: " + Math.round(mutualPart);
-                        note = note + ", CD Part: " + Math.round(cdPart);
-                        note = note + ", Roth Part: " + Math.round(rothPart);
-                        note = note + ", cash: " + Math.round(cash);
-                        note = note + "<br>(" + age + ") Roth Deduction: " + Math.round(rothPart);
-                        */
-                    } else {
-                        // Take funds from stocks, mutual fund, and cd in amounts equivilant to their relative sizes.
-                        mutualPart = shortfall * (mutual / (stock + mutual + cd));
-                        stockPart = shortfall * (stock / (stock + mutual + cd));
-                        cdPart = shortfall * (cd / (stock + mutual + cd));
-                        /*
-                        note = note + "<br> (" + age + ") Shortfall: " + Math.round(shortfall);
-                        note = note + ", Stock Part: " + Math.round(stockPart);
-                        note = note + ", Mutual Part: " + Math.round(mutualPart);
-                        note = note + ", CD Part: " + Math.round(cdPart);
-                        note = note + ", cash: " + Math.round(cash);
-                        */
-                        rothPart = 0;
-                    }
-                    stock = stock - stockPart;
-                    mutual = mutual - mutualPart;
-                    cd = cd - cdPart;
-                    cash = cash + stockPart + mutualPart + cdPart + rothPart;
-                    capGain = capGain + stockPart + mutualPart; // Take cap gains from stocks and mutual, but not the cd.
-                }
-
-                // Taxes
-                capitalGainsTax = calcCapGainsTax(capGain, taxableIncome);
-                expense = Math.round(incomeTax + capitalGainsTax + requirement + medicare);
-                shortfall = expense - cash;
-                if (shortfall < 0) {
-                    cd = cd + (shortfall * -1);
-                } 
+                sayy(age, "Taxable Income", taxableIncome);
+                sayy(age, "Income Tax", incomeTax);
                 
-                assets = Math.round(savings + cd + mutual + stock + ira + roth);
+                // Where do we get the money to pay tax and medicare, etc.
+                shortfall = Math.round((requirement + incomeTax + medicare) - cash);    
+                sayy(age, "Original Shortfall", shortfall);
+                if (shortfall > 0) {
+                    if (iraTaxPay.checked) {
+                        // Take more money out of the ira and recalculate income tax, etc.
+                        if (ira > shortfall) {
+                            sayy(age, "Shortfall from ira", shortfall);
+                            ira = ira - shortfall;
+                            iraDistribution = iraDistribution + shortfall;
+                            taxableIncome = taxableIncome + shortfall;
+                            incomeTax = calculateTax(taxableIncome);
+                            cash = cash + shortfall;
+                            shortfall = 0;
+                            note = note + "1,"; // More taken from IRA
+                        } else {
+                            if (roth > shortfall) {
+                                sayy(age, "Shortfall from Roth", shortfall);
+                                roth = roth - shortfall;
+                                rothContribution = shortfall * -1;
+                                shortfall = 0;
+                                doRoth = 0;
+                                note = note + "2,"; // Take money from Roth
+                            }
+                        }
+                    }                       
+                    shortfall = shortfall * 1.22; // bump by the additional cap gains tax we expect.  
+                    sayy(age, "Recalculated Shortfall", shortfall);
+                    if (shortfall > 0) {
+                        if (shortfall > (stock + mutual + cd)) {
+                            // Take all from stock, mutual, and cd
+                            stockPart = stock;
+                            mutualPart = mutual;
+                            cdPart = cd;
+                            note = note + "3,"; // Exhaust funds from stocks, mf, and cd.
+                            sayy(age, "Shortfall from stocks, mf, cd (e)", stock + mutual + cd);
+                        } else {
+                            // Take funds from stocks, mutual fund, and cd in amounts equivilant to their relative sizes.
+                            mutualPart = shortfall * (mutual / (stock + mutual + cd));
+                            stockPart = shortfall * (stock / (stock + mutual + cd));
+                            cdPart = shortfall * (cd / (stock + mutual + cd));
+                            note = note + "4,"; // Take money from stocks, mf, and cd
+                            sayy(age, "Shortfall from stocks, mf, cd", mutualPart + stockPart + cdPart);
+                        }
+                        stock = stock - stockPart;
+                        mutual = mutual - mutualPart;
+                        cd = cd - cdPart;
+                        cash = Math.round(cash + stockPart + mutualPart + cdPart);
+                        capGain = capGain + stockPart + mutualPart; // Take cap gains from stocks and mutual, but not the cd.
+                    }
+                }
+                sayy(age, "CD 1", cd);
+
+                // Capital Gains Taxes
+                capitalGainsTax = calcCapGainsTax(capGain, taxableIncome);
+
+                // Distribute the excess, if any
+                expense = Math.round(incomeTax + capitalGainsTax + requirement + medicare);
+                shortfall = cash - expense; // Recalculate shortfall
+                sayy(age, "c-e=sf", cash + "-" + expense + "=" + shortfall);
+                if (shortfall > 0) {
+                    if (doRoth == 1) {
+                        roth = roth + shortfall;
+                        rothContribution = shortfall;
+                        note = note + "5,";  // Roth contribution
+                    } else {
+                        cd = cd + shortfall;
+                        note = note + "6,";  // CD contribution
+                    }
+                } else {
+                    if (shortfall < 0) {
+                        if (cd > (shortfall * -1)) {
+                            cd = cd + shortfall;
+                            note = note + "7,"; // Take from CD
+                        } else {
+                            note = note + "8,"; // CD is gone
+                            cd = 0;
+                        }
+                    }
+                }
+                assets = Math.round(savings + cd + mutual + stock + ira + roth) / 1000;
+                sayy(age, "CD 2", cd);
 
                 // Output a row
-                outputRow(age, assets, mutual, stock, cd, taxableIncome, incomeTax, capGain, capitalGainsTax, ira, iraDistribution, roth, expense, cash, formatter(shortfall), medicare, rothPart, "");
+                outputRow(age, assets, mutual, stock, cd, taxableIncome, incomeTax, capGain, capitalGainsTax, ira, iraDistribution, roth, expense, cash, formatter(shortfall), medicare, rothContribution, note, "");
 
                 // Grand Totals
                 totalIncomeTax = totalIncomeTax + incomeTax;
@@ -551,34 +606,28 @@
                 medicareTwo = medicareOne;
                 medicareOne = (taxableIncome + capGain);
                 requirement = Math.round(requirement + (requirement * (Number(inflationAmount.value) / 100)));
-                ss = Math.round( ss + (ss * ((Number(inflationAmount.value) / 100) * 0.99)));
+                ssIncome = Math.round( ssIncome + (ssIncome * ((Number(inflationAmount.value) / 100) * 0.90)));
                 age++;
                 year++;
+                sayy(age, "Medicare One", medicareOne);
+                sayy(age, "Medicare Two", medicareTwo);
+                sayy(age, "Social Security", ssIncome);
+                sayy(age, "Requirement", requirement);
             }
             
-            outputRow(0, 0, 0, 0, 0, 0, totalIncomeTax, 0, totalGainsTax, 0, 0, 0, 0, 0, 0, totalMedicare, 0, "Totals");
-            
-            document.getElementById("messageArea").innerHTML = 
-                note + "<br>Total Assets: " + Math.round(assets).toLocaleString() + "; Total Tax: " + Math.round(totalIncomeTax + totalGainsTax).toLocaleString() + "; Total Medicare: " + Math.round(totalMedicare).toLocaleString();
-            
-        } catch (error) {
-            document.getElementById("messageArea").textContent = error.message;
-        }
-    }
+            outputRow(0, 0, 0, 0, 0, 0, totalIncomeTax, 0, totalGainsTax, 0, 0, 0, 0, 0, 0, totalMedicare, 0, "Totals", 0);
 
-    function showHelp() {
-        try {
-            const myDiv = document.getElementById('helpText');
-            if (myDiv.style.display === "none") {
-                myDiv.style.display = "block";
-            } else {
-                myDiv.style.display = "none";
-            }
+            incomeTax = calculateTax(ira) // tax liability on remaining ira money
+            
+            document.getElementById("messageArea").innerHTML = "Remaining Assets: " + Math.round(assets).toLocaleString() + "; IRA Tax Liability: " + incomeTax + "; Total Tax: " + Math.round(totalIncomeTax + totalGainsTax).toLocaleString() + "; Total Medicare: " + Math.round(totalMedicare).toLocaleString();
+
+            //document.getElementById("sayHere").value = 'one two three four';
+            
         } catch (error) {
             document.getElementById("messageArea").textContent = error.message;
         }
     }
-        
+ 
     </script>    
     
 </head>
@@ -597,19 +646,23 @@
                 <li>Medicare is calculated from taxable income from two years prior, 
                     or the data entered on the form for the first two yeaers.</li>
                 <li>Calculate income tax, where taxable income is 85% of Social Security + IRA distribution 
-                    + income from savings and CD + 75% of mutual funds income.  
-                    Note that 25% of mutual funds income is considered capital gains. 
-                    The 75/25 arrangement is an estimate.</li>
-                <li>Income taxes are paid for from mutual funds, stocks, and CD,
-                    in amounts equivilant to their relative sizes.  
-                    The amount withdrawn is increased by 15%, an estimate, to pay for 
+                    + income from savings and CD + 50% of mutual funds income.  
+                    Note that 50% of mutual funds income is considered capital gains. 
+                    The 50/50 arrangement is an estimate.</li>
+                <li>Income taxes are paid for from IRA distributions or mutual funds, stocks, and CD,
+                    depending on the "Pay Tax from IRA" checkbox.  
+                    If paid from mutual funds, stocks, and CD, then the deductions are
+                    equivilant to their relative sizes.  
+                    The amount withdrawn is increased by 20%, an estimate, to pay for 
                     the additional capital gains tax we incure due to this withdrawl.
                     If there is not enough money in mutual funds, stocks, and CD,
                     then we take money from Roth.  </li>    
                 <li>Calculate the actual capital gains tax per the withdrawls made above. </li>
-                <li>If there is more than enough cash to pay taxes, the overage is added to the CD.
-                    The over/under is displayed in the shortfall column. 
-                    A positive number is a shortfall.  A large shortfall indicates something is wrong.</li>
+                <li>If there is more than enough cash to pay taxes, the overage is 
+                    either added to the Roth, or the CD.
+                    If there is less, then the deficit is deducted from the CD.  
+                    The over/under is displayed in the "Excess" column. 
+                    A positive number is an excess.  </li>
                 <li>The yearly spending target is increased by the inflation amount,
                     and Social Security is increased by 99% of the inflation amount.</li>
             </ol>
@@ -667,6 +720,11 @@
                     Or, if there is no amount, but the number of years is entered,
                     then the model will calculate how much money it should convert each year to 
                     complete the conversion in the requisit number of years. </li>
+                <li><b>Pay Tax from IRA - </b>Check this box and the simulation will attempt to pay
+                    income tax from the IRA distribution, whether it be mandatory or a conversion.
+                    This potentially reduces the Roth conversion amount, so increase the amount
+                    to compensate, or not.  If there is not enough IRA money to pay all expenses,
+                    then money is deducted from the CD, first, and then the Roth.  </li>
             </ul>
             Buttons
             <ul>
@@ -680,7 +738,8 @@
             Report Columns
             <ul>
                 <li><b>Age</b> - Subjects age for current year.</li>
-                <li><b>Total Assets</b> - Sum of funds in all accounts at end of year after interest earned and expenses paid.</li>
+                <li><b>Total Assets</b> - Sum of all accounts at end of year after interest earned and expenses paid, 
+                    divided by 1000.</li>
                 <li><b>Mutual Funds</b> - Balance at end of year for mutual fund account.</li>
                 <li><b>Stocks</b> - Balance at end of year for stocks.</li>
                 <li><b>CD</b> - Balance at end of year for CD account.</li>
@@ -691,8 +750,8 @@
                     Only used when there are not enough funds in mutual funds, stocks, and CD to pay taxes.</li>
                 <li><b>Taxable Income</b> - 
                     85% of Social Security, plus IRA distribution, plus savings interest, 
-                    plus CD interest, plus 75% income from mutual funds. </li>
-                <li><b>Cap Gains</b> - Gains from the sale of stocks plus 25% of income from mutual funds. </li>
+                    plus CD interest, plus 50% income from mutual funds. </li>
+                <li><b>Cap Gains</b> - Gains from the sale of stocks plus 50% of income from mutual funds. </li>
                 <li><b>Income Tax</b> - Tax on ordinary income.</li>
                 <li><b>Cap Gains Tax</b> - Tax on capital gains.</li>
                 <li><b>Medicare</b> - Medicare premiums based on income.</li>
@@ -700,11 +759,25 @@
                     The spending target is increased each year by the inflation rate.</li>
                 <li><b>Cash</b> - Sum of Social Security and withdrawls from all accounts, 
                     except IRA distributions that are converted to Roth.</li>
-                <li><b>Shortfall</b> - The difference between cash and expenses after all withdrawls, 
-                    and taxes and medicare premiums are paid. A positive number indicates a shortage; 
-                    a negative number indicates an overage.</li>
-                <li><b>Note</b> - Notes for debugging.</li>
+                <li><b>Excess</b> - The difference between cash and expenses after all withdrawls, 
+                    and taxes and medicare premiums are paid. A positive number indicates a excess; 
+                    a negative number indicates a shortage.
+                    An excess is added to the Roth, if applicable, or the CD.
+                    A shortage is withdrawn from the CD, first, and then the Roth.</li>
+                <li><b>Note</b> - Notes (see below).</li>
+                <li><b>Other</b> - Used for debugging.</li>
             </ul>
+            Notes
+            <ol>
+                <li>Take money from the IRA to pay a shortage.</li>
+                <li>Take money from Roth to pay for a shortage.</li>
+                <li>Take money from stock, mutual fund, and cd to pay a shortage, and those accounts are exhausted.</li>
+                <li>Take money from stock, mutual fund, and cd to pay a shortage.</li>
+                <li>Make a Roth contribution.</li>
+                <li>Deposit excess to CD.</li>
+                <li>Take money from the CD to pay the shortage.</li>
+                <li>Take money from the CD to pay the shortage and the CD is exhausted.  </li>
+            </ol>
         Last Update: 8/5/2026
     </div>
     
@@ -714,17 +787,21 @@
                 <button onclick="getData()"> Retrieve Data from File </button> 
                 <button type="button" onclick="simulation()"> Simulation </button> 
             </td></tr>
-            <tr><td>Model Name:</td><td style="text-align: left;"><input type="text" id="modelName" name="modelName"></td></tr>
+            <tr><td>Model Name:</td><td style="text-align: left;">
+                <input type="text" id="modelName" name="modelName"></td></tr>
             <tr><td>Yearly Spending Target:</td>
-                <td style="text-align: left;"><input type="number" size="9" id="requirementAmount" name="requirementAmount"></td></tr>
+                <td style="text-align: left;">
+                    <input type="number" size="9" id="requirementAmount" name="requirementAmount"></td></tr>
             <tr><td>Inflation Rate:</td>
-                <td style="text-align: left;"><input type="number" size="9" id="inflationAmount" name="inflationAmount"></td></tr>
+                <td style="text-align: left;">
+                    <input type="number" size="9" id="inflationAmount" name="inflationAmount"></td></tr>
             <tr><td>Current Age / Year:</td>
                 <td><input type="number" id="ageAmount" name="ageAmount">
                     <input type="number" id="yearAmount" name="yearAmount"></td></tr>
             <tr><td>End Simulation at Age:</td>
                 <td style="text-align: left;"><input type="number" id="endSimAmount" name="endSimAmount"></td></tr>
-            <tr><td>SS Amount:</td><td style="text-align: left;"><input type="number" id="ssAmount" name="ssAmount"></td></tr>
+            <tr><td>SS Amount:</td><td style="text-align: left;">
+                <input type="number" id="ssAmount" name="ssAmount"></td></tr>
             <tr><td>Begin SS at Age / Month:</td>
                 <td><input type="number" size="9" id="beginSsAgeAmount" name="beginSsAgeAmount">
                     <input type="number" size="9" id="beginSsMonthAmount" name="beginSsMonthAmount"></td></tr>
@@ -752,12 +829,17 @@
             <tr><td>Roth Conversion Amount / Years:</td>
                 <td><input type="number" size="9" id="conversionAmount" name="conversionAmount" >
                     <input type="number" size="9" id="conversionYearsAmount" name="conversionYearsAmount" ></td></tr>
+            <tr><td>Pay Tax from IRA:</td>
+                <td style="text-align: left;">
+                    <input type="checkbox"  id="iraTaxPay" name="iraTaxPay" ></td></tr>
             <tr><td> </td> 
                 <td style="text-align: left;"> 
                     <button type="button" onclick="saveData()"> Save Data </button> 
                 </td></tr>
         </table>
-        
+
+        <textarea id="sayHere"  rows="11" cols="100" >Debug Area</textarea>
+    
         <!-- The paragraph where messages appear -->
         <p id="messageArea"></p>
 
@@ -766,10 +848,10 @@
             <thead>
                 <tr>
                     <th>Year</th> <th>Total Assets</th> <th>Mutual Fund</th> <th>Stocks</th>  <th>CD</th> 
-                    <th>IRA</th> <th>Roth</th> <th>IRA Dist</th>  <th>Roth Dist</th>
+                    <th>IRA</th> <th>Roth</th> <th>IRA Dist</th>  <th>Roth In/Out</th>
                     <th>Taxable Income</th>  <th>Cap Gains</th> <th>Income Tax</th> <th>Cap Tax</th> 
-                    <th>Medicare</th> <th>Expenses</th> <th>Cash</th> <th>Shortfall</th> 
-                    <th>Note</th>
+                    <th>Medicare</th> <th>Expenses</th> <th>Cash</th> <th>Excess</th> 
+                    <th>Note</th> <th>Other</th>
                 </tr>
             </thead>
             <tbody></tbody>
